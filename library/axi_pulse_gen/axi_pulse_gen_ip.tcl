@@ -9,6 +9,7 @@ adi_ip_files axi_pulse_gen [list \
   "$ad_hdl_dir/library/common/up_axi.v" \
   "$ad_hdl_dir/library/xilinx/common/ad_rst_constr.xdc" \
   "$ad_hdl_dir/library/common/util_pulse_gen.v" \
+  "$ad_hdl_dir/library/common/util_pulse_gen_offset.v" \
   "axi_pulse_gen_constr.ttcl" \
   "axi_pulse_gen_regmap.v" \
   "axi_pulse_gen.v"]
@@ -54,7 +55,7 @@ set_property -dict [list \
   "value_validation_range_minimum" "0" \
   "value_validation_range_maximum" "2147483647" \
  ] \
-[ipx::get_user_parameters PULSE_WIDTH -of_objects $cc]
+[ipx::get_user_parameters PULSE_0_WIDTH -of_objects $cc]
 
 set_property -dict [list \
   "value_validation_type" "range_long" \
@@ -81,11 +82,11 @@ set_property -dict [list \
   "widget" "checkBox" \
 ] [ipgui::get_guiparamspec -name "ASYNC_CLK_EN" -component $cc]
 
-ipgui::add_param -name "PULSE_WIDTH" -component $cc -parent $page0
+ipgui::add_param -name "PULSE_0_WIDTH" -component $cc -parent $page0
 set_property -dict [list \
   "display_name" "Pulse width" \
   "tooltip" "Pulse width of the generated signal. The unit interval is the system or external clock period." \
-] [ipgui::get_guiparamspec -name "PULSE_WIDTH" -component $cc]
+] [ipgui::get_guiparamspec -name "PULSE_0_WIDTH" -component $cc]
 
 ipgui::add_param -name "PULSE_PERIOD" -component $cc -parent $page0
 set_property -dict [list \

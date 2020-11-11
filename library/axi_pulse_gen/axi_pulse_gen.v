@@ -38,8 +38,15 @@ module axi_pulse_gen #(
 
   parameter       ID = 0,
   parameter [0:0] ASYNC_CLK_EN = 1,
-  parameter       PULSE_WIDTH = 7,
-  parameter       PULSE_PERIOD = 10 )(
+  parameter       NUM_POF = 3,
+  parameter       PULSE_PERIOD = 10,
+  parameter       PULSE_0_WIDTH = 7,
+  parameter       PULSE_1_WIDTH = 7,
+  parameter       PULSE_2_WIDTH = 7,
+  parameter       PULSE_3_WIDTH = 7,
+  parameter       PULSE_1_OFFSET = 0,
+  parameter       PULSE_2_OFFSET = 0,
+  parameter       PULSE_3_OFFSET = 0 )(
 
   // axi interface
 
@@ -65,7 +72,10 @@ module axi_pulse_gen #(
   output      [31:0]      s_axi_rdata,
   input                   s_axi_rready,
   input                   ext_clk,
-  output                  pulse);
+  output                  pulse,
+  output                  pulse_1,
+  output                  pulse_2,
+  output                  pulse_3 );
 
   // local parameters
 
@@ -73,6 +83,12 @@ module axi_pulse_gen #(
                                      8'h01,       /* MINOR */
                                      8'h00};      /* PATCH */ // 0.01.0
   localparam [31:0] CORE_MAGIC = 32'h504c5347;    // PLSG
+  localparam [128:0] GRUP_PULSE_OFFSET = {PULSE_1_OFFSET,
+                                          PULSE_2_OFFSET,
+                                          PULSE_3_OFFSET};
+  localparam [128:0] GRUP_PULSE_WIDTH = {PULSE_1_WIDTH,
+                                         PULSE_2_WIDTH,
+                                         PULSE_3_WIDTH};
 
   // internal signals
 
@@ -92,6 +108,12 @@ module axi_pulse_gen #(
   wire            load_config_s;
   wire            pulse_gen_resetn;
 
+  wire    [31:0]  pulse_counter;
+
+  wire [32*NUM_POF-1:0] pulse_offset_s;
+  wire [32*NUM_POF-1:0] pulse_offset_width_s;
+  wire                  offset_pulse[1:3];
+
   assign up_clk = s_axi_aclk;
   assign up_rstn = s_axi_aresetn;
 
@@ -100,15 +122,24 @@ module axi_pulse_gen #(
     .ASYNC_CLK_EN (ASYNC_CLK_EN),
     .CORE_MAGIC (CORE_MAGIC),
     .CORE_VERSION (CORE_VERSION),
-    .PULSE_WIDTH (PULSE_WIDTH),
-    .PULSE_PERIOD (PULSE_PERIOD))
+    .NUM_POF (NUM_POF),
+    .PULSE_PERIOD (PULSE_PERIOD),
+    .PULSE_0_WIDTH (PULSE_0_WIDTH),
+    .PULSE_1_WIDTH (PULSE_1_WIDTH),
+    .PULSE_2_WIDTH (PULSE_2_WIDTH),
+    .PULSE_3_WIDTH (PULSE_3_WIDTH),
+    .PULSE_1_OFFSET (PULSE_1_OFFSET),
+    .PULSE_2_OFFSET (PULSE_2_OFFSET),
+    .PULSE_3_OFFSET (PULSE_3_OFFSET))
   i_regmap (
     .ext_clk (ext_clk),
     .clk_out (clk),
     .pulse_gen_resetn (pulse_gen_resetn),
-    .pulse_width (pulse_width_s),
-    .pulse_period (pulse_period_s),
+    .pulse_width_main (pulse_width_s),
+    .pulse_period_main (pulse_period_s),
     .load_config (load_config_s),
+    .pulse_offset (pulse_offset_s),
+    .pulse_offset_width (pulse_offset_width_s),
     .up_rstn (up_rstn),
     .up_clk (up_clk),
     .up_wreq (up_wreq_s),
@@ -121,7 +152,7 @@ module axi_pulse_gen #(
     .up_rack (up_rack_s));
 
   util_pulse_gen  #(
-    .PULSE_WIDTH(PULSE_WIDTH),
+    .PULSE_WIDTH(PULSE_0_WIDTH),
     .PULSE_PERIOD(PULSE_PERIOD))
   util_pulse_gen_i(
     .clk (clk),
@@ -129,7 +160,43 @@ module axi_pulse_gen #(
     .pulse_width (pulse_width_s),
     .pulse_period (pulse_period_s),
     .load_config (load_config_s),
-    .pulse (pulse));
+    .pulse (pulse),
+    .pulse_counter (pulse_counter));
+
+  genvar n;
+  generate
+    for (n = 1; n <= NUM_POF; n = n + 1) begin: pulse_ph_offset
+      util_pulse_gen_offset  #(
+        .PULSE_WIDTH(GRUP_PULSE_WIDTH[32*n-1:32*(n-1)]),
+        .PULSE_OFFSET(GRUP_PULSE_OFFSET[32*n-1:32*(n-1)]))
+      util_pulse_gen_offset_i(
+        .clk (clk),
+        .rstn (pulse_gen_resetn),
+        .pulse_offset (pulse_offset_s[32*n-1:32*(n-1)]),
+        .pulse_period (pulse_offset_width_s[32*n-1:32*(n-1)]),
+        .pulse_counter (pulse_counter),
+        .load_config (load_config_s),
+        .pulse (offset_pulse[n]));
+    end
+
+    for (n = 1; n <= 3; n = n + 1) begin
+      if ((n == 1) && (n <= NUM_POF)) begin
+        assign pulse_1 = offset_pulse[n];
+      end else begin
+        assign pulse_1 = 1'b1;
+      end
+      if ((n == 2) && (n <= NUM_POF)) begin
+        assign pulse_2 = offset_pulse[n];
+      end else begin
+        assign pulse_2 = 1'b1;
+      end
+      if ((n == 3) && (n <= NUM_POF)) begin
+        assign pulse_3 = offset_pulse[n];
+      end else begin
+        assign pulse_3 = 1'b1;
+      end
+    end
+  endgenerate
 
   up_axi #(
     .AXI_ADDRESS_WIDTH(16))

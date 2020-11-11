@@ -41,7 +41,14 @@ module axi_pulse_gen_regmap #(
   parameter [31:0] CORE_VERSION = 0,
   parameter [ 0:0] ASYNC_CLK_EN = 1,
   parameter        PULSE_WIDTH = 7,
-  parameter        PULSE_PERIOD = 10 )(
+  parameter        PULSE_PERIOD = 10,
+  parameter        NUM_POF = 3,
+  parameter        PULSE_1_WIDTH = 7,
+  parameter        PULSE_2_WIDTH = 7,
+  parameter        PULSE_3_WIDTH = 7,
+  parameter        PULSE_1_OFFSET = 0,
+  parameter        PULSE_2_OFFSET = 0,
+  parameter        PULSE_3_OFFSET = 0)(
 
   // external clock
 
@@ -51,9 +58,11 @@ module axi_pulse_gen_regmap #(
 
   output                  clk_out,
   output                  pulse_gen_resetn,
-  output      [31:0]      pulse_width,
-  output      [31:0]      pulse_period,
+  output      [31:0]      pulse_width_main,
+  output      [31:0]      pulse_period_main,
   output                  load_config,
+  output [32*NUM_POF-1:0] pulse_offset,
+  output [32*NUM_POF-1:0] pulse_offset_width,
 
   // processor interface
 
@@ -72,8 +81,10 @@ module axi_pulse_gen_regmap #(
   // internal registers
 
   reg     [31:0]  up_scratch = 'd0;
-  reg     [31:0]  up_pulse_width = 'd0;
-  reg     [31:0]  up_pulse_period = 'd0;
+  reg     [31:0]  up_pulse_width_main = 'd0;
+  reg     [31:0]  up_pulse_period_main = 'd0;
+  reg     [31:0]  up_pulse_width [1:3];
+  reg     [31:0]  up_pulse_offset [2:4];
   reg             up_load_config = 1'b0;
   reg             up_reset;
 
@@ -81,10 +92,16 @@ module axi_pulse_gen_regmap #(
     if (up_rstn == 0) begin
       up_wack <= 'd0;
       up_scratch <= 'd0;
-      up_pulse_period <= PULSE_PERIOD;
-      up_pulse_width <= PULSE_WIDTH;
+      up_pulse_period_main <= PULSE_PERIOD;
+      up_pulse_width_main <= PULSE_WIDTH;
       up_load_config <= 1'b0;
       up_reset <= 1'b1;
+      up_pulse_offset[1] <= PULSE_1_OFFSET;
+      up_pulse_width[1] <= PULSE_1_WIDTH;
+      up_pulse_offset[2] <= PULSE_2_OFFSET;
+      up_pulse_width[2] <= PULSE_2_WIDTH;
+      up_pulse_offset[3] <= PULSE_3_OFFSET;
+      up_pulse_width[3] <= PULSE_3_WIDTH;
     end else begin
       up_wack <= up_wreq;
       if ((up_wreq == 1'b1) && (up_waddr == 14'h2)) begin
@@ -97,10 +114,28 @@ module axi_pulse_gen_regmap #(
         up_load_config <= 1'b0;
       end
       if ((up_wreq == 1'b1) && (up_waddr == 14'h5)) begin
-        up_pulse_period <= up_wdata;
+        up_pulse_period_main <= up_wdata;
       end
       if ((up_wreq == 1'b1) && (up_waddr == 14'h6)) begin
-        up_pulse_width <= up_wdata;
+        up_pulse_width_main <= up_wdata;
+      end
+      if ((up_wreq == 1'b1) && (up_waddr == 14'h10)) begin
+        up_pulse_offset[1] <= up_wdata;
+      end
+      if ((up_wreq == 1'b1) && (up_waddr == 14'h11)) begin
+        up_pulse_width[1] <= up_wdata;
+      end
+      if ((up_wreq == 1'b1) && (up_waddr == 14'h12)) begin
+        up_pulse_offset[2] <= up_wdata;
+      end
+      if ((up_wreq == 1'b1) && (up_waddr == 14'h13)) begin
+        up_pulse_width[2] <= up_wdata;
+      end
+      if ((up_wreq == 1'b1) && (up_waddr == 14'h14)) begin
+        up_pulse_offset[3] <= up_wdata;
+      end
+      if ((up_wreq == 1'b1) && (up_waddr == 14'h15)) begin
+        up_pulse_width[3] <= up_wdata;
       end
     end
   end
@@ -113,13 +148,19 @@ module axi_pulse_gen_regmap #(
       up_rack <= up_rreq;
       if (up_rreq == 1'b1) begin
         case (up_raddr)
-          14'h0: up_rdata <= CORE_VERSION;
-          14'h1: up_rdata <= ID;
-          14'h2: up_rdata <= up_scratch;
-          14'h3: up_rdata <= CORE_MAGIC;
-          14'h4: up_rdata <= up_reset;
-          14'h5: up_rdata <= up_pulse_period;
-          14'h6: up_rdata <= up_pulse_width;
+          14'h0:  up_rdata <= CORE_VERSION;
+          14'h1:  up_rdata <= ID;
+          14'h2:  up_rdata <= up_scratch;
+          14'h3:  up_rdata <= CORE_MAGIC;
+          14'h4:  up_rdata <= up_reset;
+          14'h5:  up_rdata <= up_pulse_period_main;
+          14'h6:  up_rdata <= up_pulse_width_main;
+          14'h10: up_rdata <= up_pulse_offset[1];
+          14'h11: up_rdata <= up_pulse_width[1];
+          14'h12: up_rdata <= up_pulse_offset[2];
+          14'h13: up_rdata <= up_pulse_width[2];
+          14'h14: up_rdata <= up_pulse_offset[3];
+          14'h15: up_rdata <= up_pulse_width[3];
           default: up_rdata <= 0;
         endcase
       end else begin
@@ -128,6 +169,7 @@ module axi_pulse_gen_regmap #(
     end
   end
 
+  genvar n;
   generate
   if (ASYNC_CLK_EN) begin : counter_external_clock
 
@@ -144,18 +186,18 @@ module axi_pulse_gen_regmap #(
       .ASYNC_CLK (1))
     i_pulse_period_sync (
       .in_clk (up_clk),
-      .in_data (up_pulse_period),
+      .in_data (up_pulse_period_main),
       .out_clk (clk_out),
-      .out_data (pulse_period));
+      .out_data (pulse_period_main));
 
     sync_data #(
       .NUM_OF_BITS (32),
       .ASYNC_CLK (1))
     i_pulse_width_sync (
       .in_clk (up_clk),
-      .in_data (up_pulse_width),
+      .in_data (up_pulse_width_main),
       .out_clk (clk_out),
-      .out_data (pulse_width));
+      .out_data (pulse_width_main));
 
     sync_event #(
       .NUM_OF_EVENTS (1),
@@ -166,13 +208,29 @@ module axi_pulse_gen_regmap #(
       .out_clk (clk_out),
       .out_event (load_config));
 
+    for (n = 1; n <= NUM_POF; n = n + 1) begin: pulse_ph_async
+      sync_data #(
+        .NUM_OF_BITS (64),
+        .ASYNC_CLK (1))
+      i_pulse_phase (
+        .in_clk (up_clk),
+        .in_data ({up_pulse_offset[n],
+                   up_pulse_width[n]}),
+        .out_clk (clk_out),
+        .out_data ({pulse_offset[32*n-1:32*(n-1)],
+                    pulse_offset_width[32*n-1:32*(n-1)]}));
+    end
   end else begin : counter_sys_clock        // counter is running on system clk
 
     assign clk_out = up_clk;
     assign pulse_gen_resetn = ~up_reset;
-    assign pulse_period = up_pulse_period;
-    assign pulse_width = up_pulse_width;
+    assign pulse_period_main = up_pulse_period_main;
+    assign pulse_width_main = up_pulse_width_main;
     assign load_config = up_load_config;
+    for (n = 1; n <= NUM_POF; n = n + 1) begin: pulse_ph_sync
+      assign pulse_offset[32*n-1-1:32*(n-1)] = up_pulse_offset[n];
+      assign pulse_offset_width[32*n-1:32*(n-1)]  = up_pulse_width[n];
+    end
 
   end
   endgenerate

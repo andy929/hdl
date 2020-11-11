@@ -8,6 +8,7 @@ LIBRARY_NAME := axi_pulse_gen
 GENERIC_DEPS += ../common/ad_rst.v
 GENERIC_DEPS += ../common/up_axi.v
 GENERIC_DEPS += ../common/util_pulse_gen.v
+GENERIC_DEPS += ../common/util_pulse_gen_offset.v
 GENERIC_DEPS += axi_pulse_gen.v
 GENERIC_DEPS += axi_pulse_gen_regmap.v
 
